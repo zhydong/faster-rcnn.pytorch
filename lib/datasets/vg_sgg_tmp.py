@@ -1,212 +1,159 @@
+
 from __future__ import print_function
 from __future__ import absolute_import
-# --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
-# --------------------------------------------------------
 
 import os
-from datasets.imdb import imdb
-import datasets.ds_utils as ds_utils
-import xml.etree.ElementTree as ET
+import PIL
+import pdb
+import gzip
+import json
+import h5py
+import pickle
 import numpy as np
 import scipy.sparse
-import gzip
-import PIL
-import json
+import os.path as osp
+import xml.etree.ElementTree as ET
+
 from .vg_eval import vg_eval
+import datasets.ds_utils as ds_utils
+from datasets.imdb import imdb
 from model.utils.config import cfg
-import pickle
-import pdb
-try:
-    xrange          # Python 2
-except NameError:
-    xrange = range  # Python 3
+
+from IPython import embed
 
 
-class vg(imdb):
-    def __init__(self, version, image_set, ):
-        imdb.__init__(self, 'vg_' + version + '_' + image_set)
+class vg_sgg(imdb):
+    """
+    imdb of Visual Genome by SGG split
+    """
+    def __init__(self, version):
+        imdb.__init__(self, 'vg_%s' % version)
         self._version = version
-        self._image_set = image_set
-        self._data_path = os.path.join(cfg.DATA_DIR, 'genome')
-        self._img_path = os.path.join(cfg.DATA_DIR, 'vg')
-        # VG specific config options
-        self.config = {'cleanup' : False}
+        self._data_dir = osp.join(cfg.DATA_DIR, 'visual_genome')
+        self._img_dir = osp.join(self._data_dir, 'VG_100K')
+        self._anno_dir = osp.join(self._data_dir, 'sggimp')  # Scene Graph Generation by Iterative Message Passing
+        self._cache_dir = osp.join(cfg.DATA_DIR, 'cache')
+        self._img_ext = '.jpg'
+        self._check_sggfile_valid()
 
-        # Load classes
-        self._classes = ['__background__']
-        self._class_to_ind = {}
-        self._class_to_ind[self._classes[0]] = 0
-        with open(os.path.join(self._data_path, self._version, 'objects_vocab.txt')) as f:
-          count = 1
-          for object in f.readlines():
-            names = [n.lower().strip() for n in object.split(',')]
-            self._classes.append(names[0])
-            for n in names:
-              self._class_to_ind[n] = count
-            count += 1
+        with open(osp.join(self._anno_dir, 'VG-SGG-dicts.json'), 'r') as f:
+            vg_sgg_dicts = json.load(f)
+            self._object_count = vg_sgg_dicts.get('object_count')
+            self._predicate_count = vg_sgg_dicts.get('predicate_count')
+            self._idx_to_label = vg_sgg_dicts.get('idx_to_label')
+            self._idx_to_predicate = vg_sgg_dicts.get('idx_to_predicate')
+            self._label_to_idx = vg_sgg_dicts.get('label_to_idx')
+            self._predicate_to_idx = vg_sgg_dicts.get('predicate_to_idx')
 
-        # Load attributes
-        self._attributes = ['__no_attribute__']
-        self._attribute_to_ind = {}
-        self._attribute_to_ind[self._attributes[0]] = 0
-        with open(os.path.join(self._data_path, self._version, 'attributes_vocab.txt')) as f:
-          count = 1
-          for att in f.readlines():
-            names = [n.lower().strip() for n in att.split(',')]
-            self._attributes.append(names[0])
-            for n in names:
-              self._attribute_to_ind[n] = count
-            count += 1
+        self._idx_to_label = dict(
+            map(
+                lambda x: (int(x[0]), x[1]), self._idx_to_label.items()
+            )
+        ).update({0: '__background__'})
+        self._label_to_idx.update({'__background__': 0})
 
-        # Load relations
-        self._relations = ['__no_relation__']
-        self._relation_to_ind = {}
-        self._relation_to_ind[self._relations[0]] = 0
-        with open(os.path.join(self._data_path, self._version, 'relations_vocab.txt')) as f:
-          count = 1
-          for rel in f.readlines():
-            names = [n.lower().strip() for n in rel.split(',')]
-            self._relations.append(names[0])
-            for n in names:
-              self._relation_to_ind[n] = count
-            count += 1
+        self._idx_to_predicate = dict(
+            map(
+                lambda x: (int(x[0]), x[1]), self._idx_to_predicate.items()
+            )
+        ).update({0: '__no_relationship__'})
+        self._predicate_to_idx.update({'__no_relationship__': 0})
 
+        # VG-SGG.h5 is only 57M, it can be loaded into memory directly
+        with h5py.File(osp.join(self._anno_dir, 'VG-SGG.h5'), 'r') as f:
+            # box number to box label index, with shape of (NumOfBoxes,)
+            self.labels = f['labels']
+            # relation number to predicate index, with shape of (NumOfRelationships,)
+            self.predicates = f['predicates']
+            # boxes in shape of 1024, with shape of (NumOfBoxes, 4)
+            self.boxes_1024 = f['boxes_1024']
+            # boxes in shape of 512, with shape of (NumOfBoxes, 4)
+            self.boxes_512 = f['boxes_512']
+            #  relation number to two box number, with shape of (NumOfRelationships, 2)
+            self.relationships = f['relationships']
+            # image number to box number, with shape of (NumOfImgs,)
+            self.img_to_first_box = f['img_to_first_box']
+            # image number to box number, with shape of (NumOfImgs,)
+            self.img_to_last_box = f['img_to_last_box']
+            # image number to relationship number, with shape of (NumOfImgs,)
+            self.img_to_first_rel = f['img_to_first_rel']
+            # image number to relationship number, with shape of (NumOfImgs,)
+            self.img_to_last_rel = f['img_to_last_rel']
+            # image splits indicator, 0-train, 1-val, 2-test, with shape of (NumOfImgs,)
+            self.split = f['split']
 
-        self._image_ext = '.jpg'
-        load_index_from_file = False
-        if os.path.exists(os.path.join(self._data_path, "vg_image_index_{}.p".format(self._image_set))):
-            with open(os.path.join(self._data_path, "vg_image_index_{}.p".format(self._image_set)), 'rb') as fp:
-                self._image_index = pickle.load(fp)
-            load_index_from_file = True
+        self.imgs_path, self.imgs_meta = self.load_imgs_path_and_meta()
 
-        load_id_from_file = False
-        if os.path.exists(os.path.join(self._data_path, "vg_id_to_dir_{}.p".format(self._image_set))):
-            with open(os.path.join(self._data_path, "vg_id_to_dir_{}.p".format(self._image_set)), 'rb') as fp:
-                self._id_to_dir = pickle.load(fp)
-            load_id_from_file = True
-
-        if not load_index_from_file or not load_id_from_file:
-            self._image_index, self._id_to_dir = self._load_image_set_index()
-            with open(os.path.join(self._data_path, "vg_image_index_{}.p".format(self._image_set)), 'wb') as fp:
-                pickle.dump(self._image_index, fp)
-            with open(os.path.join(self._data_path, "vg_id_to_dir_{}.p".format(self._image_set)), 'wb') as fp:
-                pickle.dump(self._id_to_dir, fp)
-
-        self._roidb_handler = self.gt_roidb
-
-    def image_path_at(self, i):
+    def _check_sggfile_valid(self):
         """
-        Return the absolute path to image i in the image sequence.
+        Check completeness of files from SGGIMP
         """
-        return self.image_path_from_index(self._image_index[i])
+        assert osp.exists(osp.join(self._anno_path, 'VG-SGG.h5'))
+        assert osp.exists(osp.join(self._anno_path, 'VG-SGG-dicts.json'))
+        assert osp.exists(osp.join(self._anno_path, 'image_data.json'))
 
-    def image_id_at(self, i):
+    def load_imgs_path_and_meta(self):
         """
-        Return the absolute path to image i in the image sequence.
-        #TODO: problem here?
+        Loads the image filenames from visual genome from the JSON file that contains them.
+        This matches the preprocessing in scene-graph-TF-release/data_tools/vg_to_imdb.py.
         """
-        return i
-        # return self._image_index[i]
-
-    def image_path_from_index(self, index):
-        """
-        Construct an image path from the image's "index" identifier.
-        """
-        folder = self._id_to_dir[index]
-        image_path = os.path.join(self._img_path, folder,
-                                  str(index) + self._image_ext)
-        assert os.path.exists(image_path), \
-                'Path does not exist: {}'.format(image_path)
-        return image_path
-
-    def _image_split_path(self):
-        if self._image_set == "minitrain":
-          return os.path.join(self._data_path, 'train.txt')
-        if self._image_set == "smalltrain":
-          return os.path.join(self._data_path, 'train.txt')
-        if self._image_set == "minival":
-          return os.path.join(self._data_path, 'val.txt')
-        if self._image_set == "smallval":
-          return os.path.join(self._data_path, 'val.txt')
-        else:
-          return os.path.join(self._data_path, self._image_set+'.txt')
-
-    def _load_image_set_index(self):
-        """
-        Load the indexes listed in this dataset's image set file.
-        """
-        training_split_file = self._image_split_path()
-        assert os.path.exists(training_split_file), \
-                'Path does not exist: {}'.format(training_split_file)
-        with open(training_split_file) as f:
-          metadata = f.readlines()
-          if self._image_set == "minitrain":
-            metadata = metadata[:1000]
-          elif self._image_set == "smalltrain":
-            metadata = metadata[:20000]
-          elif self._image_set == "minival":
-            metadata = metadata[:100]
-          elif self._image_set == "smallval":
-            metadata = metadata[:2000]
-
-        image_index = []
-        id_to_dir = {}
-        for line in metadata:
-          im_file,ann_file = line.split()
-          image_id = int(ann_file.split('/')[-1].split('.')[0])
-          filename = self._annotation_path(image_id)
-          if os.path.exists(filename):
-              # Some images have no bboxes after object filtering, so there
-              # is no xml annotation for these.
-              tree = ET.parse(filename)
-              for obj in tree.findall('object'):
-                  obj_name = obj.find('name').text.lower().strip()
-                  if obj_name in self._class_to_ind:
-                      # We have to actually load and check these to make sure they have
-                      # at least one object actually in vocab
-                      image_index.append(image_id)
-                      id_to_dir[image_id] = im_file.split('/')[0]
-                      break
-        return image_index, id_to_dir
+        with open(osp.join(self._anno_path, 'image_data.json'), 'r') as f:
+            img_meta = json.load(f)
+        # corrupted images are `1592.jpg`, `1722.jpg`, `4616.jpg`, `4617.jpg`
+        # notice: the index decrease 1 when del happens
+        del img_meta[1591], img_meta[1720], img_meta[4613], img_meta[4613]
+        paths = []
+        for meta in img_meta:
+            fn = '{}.jpg'.format(meta['image_id'])
+            path = os.path.join(self._img_dir, fn)
+            if os.path.exists(path):
+                paths.append(path)
+        assert len(fns) == 108073
+        return paths, img_met
 
     def gt_roidb(self):
         """
         Return the database of ground-truth regions of interest.
-
-        This function loads/saves from/to a cache file to speed up future calls.
+        This function loads/saves from/to a pickle file to speed up future calls.
         """
-        cache_file = os.path.join(self.cache_path, self.name + '_gt_roidb.pkl')
+        cache_file = os.path.join(self._cache_path, '%s_gt_roidb.pkl' % self._name)
         if os.path.exists(cache_file):
-            fid = gzip.open(cache_file,'rb')
-            roidb = pickle.load(fid)
-            fid.close()
-            print('{} gt roidb loaded from {}'.format(self.name, cache_file))
+            with gzip.open(cache_file, 'rb') as fid:
+                roidb = pickle.load(fid)
+            print('{} gt roidb loaded from {}'.format(self._name, cache_file))
             return roidb
-
-        gt_roidb = [self._load_vg_annotation(index)
-                    for index in self.image_index]
-        fid = gzip.open(cache_file,'wb')
-        pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
-        fid.close()
-        print('wrote gt roidb to {}'.format(cache_file))
+        gt_roidb = [self._vg_sgg_anno(index) for index in range(self._nr_img)]
+        with gzip.open(cache_file, 'wb') as fid:
+            pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
+            print('wrote gt roidb to {}'.format(cache_file))
         return gt_roidb
 
     def _get_size(self, index):
-      return PIL.Image.open(self.image_path_from_index(index)).size
+        """
+        get size of image with index
+        Args:
+           index: integer, index of image
+        Returns:
+           height: integer
+           width: integer
+        """
+        height = self._image_data[index]['height']
+        width = self._image_data[index]['width']
+        return height, width
 
     def _annotation_path(self, index):
+        # todo
         return os.path.join(self._data_path, 'xml', str(index) + '.xml')
 
-    def _load_vg_annotation(self, index):
+    def _vg_sgg_anno(self, index):
         """
-        Load image and bounding boxes info from XML file in the PASCAL VOC
-        format.
+        load Visual Genome annotations
         """
-        width, height = self._get_size(index)
+        height, width = self._get_size(index)
+
+
+
+
         filename = self._annotation_path(index)
         tree = ET.parse(filename)
         objs = tree.findall('object')
@@ -279,15 +226,15 @@ class vg(imdb):
                         pass # Object not in dictionary
         gt_relations = np.array(list(gt_relations), dtype=np.int32)
 
-        return {'boxes' : boxes,
+        return {'boxes': boxes,
                 'gt_classes': gt_classes,
-                'gt_attributes' : gt_attributes,
-                'gt_relations' : gt_relations,
-                'gt_overlaps' : overlaps,
-                'width' : width,
+                'gt_attributes': gt_attributes,
+                'gt_relations': gt_relations,
+                'gt_overlaps': overlaps,
+                'width': width,
                 'height': height,
-                'flipped' : False,
-                'seg_areas' : seg_areas}
+                'flipped': False,
+                'seg_areas': seg_areas}
 
     def evaluate_detections(self, all_boxes, output_dir):
         self._write_voc_results_file(self.classes, all_boxes, output_dir)
@@ -326,7 +273,7 @@ class vg(imdb):
                     if dets == []:
                         continue
                     # the VOCdevkit expects 1-based indices
-                    for k in xrange(dets.shape[0]):
+                    for k in range(dets.shape[0]):
                         f.write('{:s} {:.3f} {:.1f} {:.1f} {:.1f} {:.1f}\n'.
                                 format(str(index), dets[k, -1],
                                        dets[k, 0] + 1, dets[k, 1] + 1,

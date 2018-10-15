@@ -13,8 +13,9 @@ import math
 import torch.utils.model_zoo as model_zoo
 import pdb
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-       'resnet152']
+from IPython import embed
+
+__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
 
 
 model_urls = {
@@ -25,10 +26,12 @@ model_urls = {
   'resnet152': 'https://s3.amazonaws.com/pytorch/models/resnet152-b121ed2d.pth',
 }
 
+
 def conv3x3(in_planes, out_planes, stride=1):
-  "3x3 convolution with padding"
-  return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-           padding=1, bias=False)
+  """
+  3x3 convolution with padding
+  """
+  return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
 
 
 class BasicBlock(nn.Module):
@@ -236,7 +239,7 @@ class resnet(_fasterRCNN):
 
     # Build resnet.
     self.RCNN_base = nn.Sequential(resnet.conv1, resnet.bn1,resnet.relu,
-      resnet.maxpool,resnet.layer1,resnet.layer2,resnet.layer3)
+      resnet.maxpool, resnet.layer1, resnet.layer2, resnet.layer3)
 
     self.RCNN_top = nn.Sequential(resnet.layer4)
 
@@ -247,21 +250,27 @@ class resnet(_fasterRCNN):
       self.RCNN_bbox_pred = nn.Linear(2048, 4 * self.n_classes)
 
     # Fix blocks
-    for p in self.RCNN_base[0].parameters(): p.requires_grad=False
-    for p in self.RCNN_base[1].parameters(): p.requires_grad=False
+    for p in self.RCNN_base[0].parameters():
+      p.requires_grad = False
+    for p in self.RCNN_base[1].parameters():
+      p.requires_grad = False
 
     assert (0 <= cfg.RESNET.FIXED_BLOCKS < 4)
     if cfg.RESNET.FIXED_BLOCKS >= 3:
-      for p in self.RCNN_base[6].parameters(): p.requires_grad=False
+      for p in self.RCNN_base[6].parameters():
+        p.requires_grad = False
     if cfg.RESNET.FIXED_BLOCKS >= 2:
-      for p in self.RCNN_base[5].parameters(): p.requires_grad=False
+      for p in self.RCNN_base[5].parameters():
+        p.requires_grad = False
     if cfg.RESNET.FIXED_BLOCKS >= 1:
-      for p in self.RCNN_base[4].parameters(): p.requires_grad=False
+      for p in self.RCNN_base[4].parameters():
+        p.requires_grad = False
 
     def set_bn_fix(m):
       classname = m.__class__.__name__
       if classname.find('BatchNorm') != -1:
-        for p in m.parameters(): p.requires_grad=False
+        for p in m.parameters():
+          p.requires_grad = False
 
     self.RCNN_base.apply(set_bn_fix)
     self.RCNN_top.apply(set_bn_fix)

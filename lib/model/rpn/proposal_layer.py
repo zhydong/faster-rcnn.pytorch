@@ -155,8 +155,8 @@ class _ProposalLayer(nn.Module):
 
             # padding 0 at the end.
             num_proposal = proposals_single.size(0)
-            output[i,:,0] = i
-            output[i,:num_proposal,1:] = proposals_single
+            output[i, :, 0] = i
+            output[i, :num_proposal, 1:] = proposals_single
 
         return output
 

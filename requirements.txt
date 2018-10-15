@@ -1,6 +1,5 @@
 cython
 cffi
-opencv-python
 scipy
 msgpack
 easydict
