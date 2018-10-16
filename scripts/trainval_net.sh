@@ -9,7 +9,7 @@ python trainval_net.py \
     --nw $NUM_WORKER \
     --lr $LEARNING_RATE \
     --lr_decay_epoch $DECAY_STEP \
-    --resume --cuda \
+    --cuda \
     --mGPUs
 
 

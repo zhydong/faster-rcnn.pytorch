@@ -20,6 +20,8 @@ from model.utils.config import cfg
 from roi_data_layer.minibatch import get_minibatch
 from model.rpn.bbox_transform import bbox_transform_inv, clip_boxes
 
+from IPython import embed
+
 
 class RoIDataset(data.Dataset):
     def __init__(self, roidb, ratio_list, ratio_index, batch_size, num_classes, training=True, normalize=None):
@@ -141,6 +143,7 @@ class RoIDataset(data.Dataset):
                             if x_s_min == x_s_max:
                                 x_s = x_s_min
                             else:
+                                embed(header='roidb')
                                 x_s = np.random.choice(range(x_s_min, x_s_max))
                         else:
                             x_s_add = int((box_region-trim_size)/2)

@@ -10,8 +10,6 @@ import numpy as np
 import scipy.sparse
 import os.path as osp
 
-#from .vg_eval import vg_eval
-#import datasets.ds_utils as ds_utils
 from datasets.imdb import imdb
 from model.utils.config import cfg
 
@@ -72,13 +70,24 @@ class vg_sggimp(imdb):
         self.split_data(split)
         self.filter_invalid_box()
 
-        self.nr_img = len(self.img_meta)
+
         # set imdb shit
-        self._image_index
+        self._image_index = np.arange(len(self.img_meta))
         self._roidb_handler = self.gt_roidb
         self._image_ext = '.jpg'
-        self._classes = 
-        self
+    def image_id_at(self, idx):
+        """
+        Args:
+            idx: integer, image index
+        """
+        return self.img_meta[idx]['image_id']
+
+    def image_path_at(self, idx):
+        """
+        Args:
+            idx: integer, image index
+        """
+        return self.imgs_path[idx]
 
     def load_statistic(self):
         self.idx_to_labels = dict(map(lambda x: (int(x[0]), x[1]), self.vg_dicts['idx_to_label'].items()))
@@ -87,6 +96,7 @@ class vg_sggimp(imdb):
         self.idx_to_predicates.update({0: '__irrelevant__'})
         self.nr_classes = len(self.idx_to_labels)
         self.nr_predicates = len(self.idx_to_predicates)
+        self._classes = tuple(self.idx_to_labels.values())
 
     def filter_corrupted_imgs(self):
         """
@@ -143,7 +153,7 @@ class vg_sggimp(imdb):
             with open(cache_path, 'rb') as f:
                 roidb = pickle.load(f)
             return roidb
-        roidb = [self._load_vg_anno(i) for i in range(self.nr_img)]
+        roidb = [self._load_vg_anno(i) for i in self.image_index]
         with open(cache_path, 'wb') as f:
             pickle.dump(roidb, f)
         return roidb
