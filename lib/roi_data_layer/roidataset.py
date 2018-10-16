@@ -143,7 +143,6 @@ class RoIDataset(data.Dataset):
                             if x_s_min == x_s_max:
                                 x_s = x_s_min
                             else:
-                                embed(header='roidb')
                                 x_s = np.random.choice(range(x_s_min, x_s_max))
                         else:
                             x_s_add = int((box_region-trim_size)/2)

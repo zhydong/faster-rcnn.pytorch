@@ -40,9 +40,30 @@ class vg_sggimp(imdb):
         self.vg_h5 = h5py.File(osp.join(self.anno_dir, 'VG-SGG.h5'))
 
         # filter boxes
-        self.filter_corrupted_imgs()
+        # filter_corrupted_imgs()
+        # corrupted files: 1592.jpg 1722.jpg 4616.jpg 4617.jpg
+        del self.img_meta[1591], self.img_meta[1720]
+        del self.img_meta[4613], self.img_meta[4613]
+
+        self.imgs_path = []
+        for meta in self.img_meta:
+            fn = '{}.jpg'.format(meta['image_id'])
+            img_path = osp.join(self.img_dir, fn)
+            if osp.exists(img_path):
+                self.imgs_path.append(img_path)
+        self.imgs_path = np.array(self.imgs_path)
+        self.img_meta = np.array(self.img_meta)
+        assert len(self.imgs_path) == 108073
+
         # there are 108073 images now
-        self.load_statistic()
+        # load statistics
+        self.idx_to_labels = dict(map(lambda x: (int(x[0]), x[1]), self.vg_dicts['idx_to_label'].items()))
+        self.idx_to_labels.update({0: 'background'})
+        self.idx_to_predicates = dict(map(lambda x: (int(x[0]), x[1]), self.vg_dicts['idx_to_predicate'].items()))
+        self.idx_to_predicates.update({0: '__irrelevant__'})
+        self.nr_classes = len(self.idx_to_labels)
+        self.nr_predicates = len(self.idx_to_predicates)
+        self._classes = tuple(self.idx_to_labels.values())
 
         # shape : (NumOfImages, )
         self.img_to_first_box = self.vg_h5['img_to_first_box'].value
@@ -70,11 +91,10 @@ class vg_sggimp(imdb):
         self.split_data(split)
         self.filter_invalid_box()
 
-
         # set imdb shit
         self._image_index = np.arange(len(self.img_meta))
-        self._roidb_handler = self.gt_roidb
         self._image_ext = '.jpg'
+
     def image_id_at(self, idx):
         """
         Args:
@@ -89,34 +109,6 @@ class vg_sggimp(imdb):
         """
         return self.imgs_path[idx]
 
-    def load_statistic(self):
-        self.idx_to_labels = dict(map(lambda x: (int(x[0]), x[1]), self.vg_dicts['idx_to_label'].items()))
-        self.idx_to_labels.update({0: 'background'})
-        self.idx_to_predicates = dict(map(lambda x: (int(x[0]), x[1]),self.vg_dicts['idx_to_predicate'].items()))
-        self.idx_to_predicates.update({0: '__irrelevant__'})
-        self.nr_classes = len(self.idx_to_labels)
-        self.nr_predicates = len(self.idx_to_predicates)
-        self._classes = tuple(self.idx_to_labels.values())
-
-    def filter_corrupted_imgs(self):
-        """
-        Args:
-        """
-# TODO: put magic numbers in config.py
-        # corrupted files: 1592.jpg 1722.jpg 4616.jpg 4617.jpg
-        del self.img_meta[1591], self.img_meta[1720]
-        del self.img_meta[4613], self.img_meta[4613]
-
-        self.imgs_path = []
-        for meta in self.img_meta:
-            fn = '{}.jpg'.format(meta['image_id'])
-            img_path = osp.join(self.img_dir, fn)
-            if osp.exists(img_path):
-                self.imgs_path.append(img_path)
-        self.imgs_path = np.array(self.imgs_path)
-        self.img_meta = np.array(self.img_meta)
-        assert len(self.imgs_path) == 108073
-
     def split_data(self, split):
         """
         Args:
@@ -129,7 +121,7 @@ class vg_sggimp(imdb):
         """
             delelte those image without boxes
         """
-        valid_mask = self.img_to_first_box >=0 
+        valid_mask = self.img_to_first_box >= 0
         assert np.all(
                 valid_mask == (self.img_to_last_box >= 0)
                 )
@@ -150,6 +142,7 @@ class vg_sggimp(imdb):
     def gt_roidb(self):
         cache_path = osp.join(self.cache_dir, '%s_roidb.pkl' % self._name)
         if osp.exists(cache_path):
+            print('load roidb from cache pickle file')
             with open(cache_path, 'rb') as f:
                 roidb = pickle.load(f)
             return roidb
@@ -158,8 +151,7 @@ class vg_sggimp(imdb):
             pickle.dump(roidb, f)
         return roidb
 
-
-
+    @staticmethod
     def get_size_after_resizing(self, height, width, scale):
         if height > width:
             return int(scale), int(width / height * scale)
@@ -176,18 +168,25 @@ class vg_sggimp(imdb):
         """
         idx_roidb = {}
         # image annotations
-        oh, ow = self.img_meta[idx]['height'], self.img_meta[idx]['width']
-        height, width = self.get_size_after_resizing(oh, ow, cfg.BOX_SCALE_H5)
+        height, width = self.img_meta[idx]['height'], self.img_meta[idx]['width']
+        img_scales = max(height, width) / cfg.BOX_SCALE_H5
+
+        # height, width = self.get_size_after_resizing(oh, ow, cfg.BOX_SCALE_H5)
 
         # bounding boxes annotations
         bboxes = self.bboxes[self.img_to_first_box[idx]: self.img_to_last_box[idx] + 1, :]
+        # bboxes was in cfg.BBOX_SCALE_H5, supposed 1024
+        # original image max size: max(h, w)
+        # original bboxes = bboxes in 1024-size image * max(h,w)/ 1024
+        bboxes = bboxes * img_scales
+        bboxes = bboxes.astype('int32')
         bbox_labels = self.bbox_labels[self.img_to_first_box[idx]: self.img_to_last_box[idx] + 1]
         overlaps = np.zeros((bboxes.shape[0], self.nr_classes))
         for ci, o in enumerate(overlaps):
             o[bbox_labels[ci]] = 1.
         overlaps = scipy.sparse.csr_matrix(overlaps)
-        seg_areas = np.multiply(bboxes[:, 2] - bboxes[:, 0] + 1, 
-                bboxes[:, 3] - bboxes[:, 1] + 1)
+        seg_areas = np.multiply(bboxes[:, 2] - bboxes[:, 0] + 1,
+                                bboxes[:, 3] - bboxes[:, 1] + 1)
 
         # relation annotations
         rels = []
