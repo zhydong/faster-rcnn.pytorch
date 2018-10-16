@@ -35,8 +35,6 @@ from model.faster_rcnn.vgg16 import vgg16
 from model.faster_rcnn.resnet import resnet
 
 
-
-
 def parse_args():
     """
     Parse input arguments
@@ -86,6 +84,7 @@ def parse_args():
                         action='store_true')
     args = parser.parse_args()
     return args
+
 
 lr = cfg.TRAIN.LEARNING_RATE
 momentum = cfg.TRAIN.MOMENTUM
@@ -160,12 +159,11 @@ if __name__ == '__main__':
 
     fasterRCNN.create_architecture()
 
-    print("load checkpoint %s" % (load_name))
+    print("load checkpoint %s" % load_name)
     checkpoint = torch.load(load_name)
     fasterRCNN.load_state_dict(checkpoint['model'])
     if 'pooling_mode' in checkpoint.keys():
         cfg.POOLING_MODE = checkpoint['pooling_mode']
-
 
     print('load model successfully!')
     # initilize the tensor holder here.
@@ -209,11 +207,15 @@ if __name__ == '__main__':
                  for _ in range(imdb.num_classes)]
 
     output_dir = get_output_dir(imdb, save_name)
-    dataset = roibatchLoader(roidb, ratio_list, ratio_index, 1, \
-                          imdb.num_classes, training=False, normalize = False)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1,
-                              shuffle=False, num_workers=0,
-                              pin_memory=True)
+    dataset = roibatchLoader(roidb, ratio_list, ratio_index, 1,
+                             imdb.num_classes, training=False, normalize = False)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True
+    )
 
     data_iter = iter(dataloader)
 
@@ -221,7 +223,7 @@ if __name__ == '__main__':
     det_file = os.path.join(output_dir, 'detections.pkl')
 
     fasterRCNN.eval()
-    empty_array = np.transpose(np.array([[],[],[],[],[]]), (1,0))
+    empty_array = np.transpose(np.array([[], [], [], [], []]), (1,0))
     for i in range(num_images):
 
         data = next(data_iter)

@@ -24,6 +24,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as COCOmask
 
+
 class coco(imdb):
   def __init__(self, image_set, year):
     imdb.__init__(self, 'coco_' + year + '_' + image_set)

@@ -61,7 +61,6 @@ class vg_sggimp(imdb):
         self.idx_to_labels.update({0: 'background'})
         self.idx_to_predicates = dict(map(lambda x: (int(x[0]), x[1]), self.vg_dicts['idx_to_predicate'].items()))
         self.idx_to_predicates.update({0: '__irrelevant__'})
-        self.nr_classes = len(self.idx_to_labels)
         self.nr_predicates = len(self.idx_to_predicates)
         self._classes = tuple(self.idx_to_labels.values())
 
@@ -171,8 +170,6 @@ class vg_sggimp(imdb):
         height, width = self.img_meta[idx]['height'], self.img_meta[idx]['width']
         img_scales = max(height, width) / cfg.BOX_SCALE_H5
 
-        # height, width = self.get_size_after_resizing(oh, ow, cfg.BOX_SCALE_H5)
-
         # bounding boxes annotations
         bboxes = self.bboxes[self.img_to_first_box[idx]: self.img_to_last_box[idx] + 1, :]
         # bboxes was in cfg.BBOX_SCALE_H5, supposed 1024
@@ -181,7 +178,7 @@ class vg_sggimp(imdb):
         bboxes = bboxes * img_scales
         bboxes = bboxes.astype('int32')
         bbox_labels = self.bbox_labels[self.img_to_first_box[idx]: self.img_to_last_box[idx] + 1]
-        overlaps = np.zeros((bboxes.shape[0], self.nr_classes))
+        overlaps = np.zeros((bboxes.shape[0], self.num_classes))
         for ci, o in enumerate(overlaps):
             o[bbox_labels[ci]] = 1.
         overlaps = scipy.sparse.csr_matrix(overlaps)

@@ -1,5 +1,5 @@
-BATCH_SIZE=2
-NUM_WORKER=2
+BATCH_SIZE=1
+NUM_WORKER=0
 LEARNING_RATE='0.001'
 DECAY_STEP=10
 python trainval_net.py \
@@ -10,6 +10,6 @@ python trainval_net.py \
     --lr $LEARNING_RATE \
     --lr_decay_epoch $DECAY_STEP \
     --cuda \
-    --mGPUs
+    --use_tfb
 
 

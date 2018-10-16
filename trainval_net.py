@@ -3,18 +3,18 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import cv2
 import sys
 import pdb
 import time
 import pprint
 import argparse
 import numpy as np
-import cv2
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 import torchvision.transforms as transforms
 from torch.utils.data.sampler import Sampler
 
@@ -201,7 +201,6 @@ if __name__ == '__main__':
     # -- Note: Use validation set and disable the flipped to enable faster loading.
     cfg.USE_GPU_NMS = args.cuda
     imdb, roidb, ratio_list, ratio_index = combined_roidb(args.imdb_name)
-    embed(header='trainval_net.py')
     train_size = len(roidb)
 
     print('{:d} roidb entries'.format(len(roidb)))
@@ -395,8 +394,8 @@ if __name__ == '__main__':
                         'loss_rcnn_box': loss_rcnn_box
                     }
                     logger.add_scalars(
-                        tag="logs_s_{}/losses".format(args.session),
-                        scalar_value=info,
+                        main_tag="logs_s_{}/losses".format(args.session),
+                        tag_scalar_dict=info,
                         global_step=(epoch - 1) * iters_per_epoch + step
                     )
 

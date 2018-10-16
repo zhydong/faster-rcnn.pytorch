@@ -9,19 +9,21 @@ from __future__ import absolute_import
 # Reorganized and modified by Jianwei Yang and Jiasen Lu
 # --------------------------------------------------------
 
-import torch
-import torch.nn as nn
-import numpy as np
+import pdb
 import math
 import yaml
+import numpy as np
+
+import torch
+import torch.nn as nn
+
 from model.utils.config import cfg
 from .generate_anchors import generate_anchors
 from .bbox_transform import bbox_transform_inv, clip_boxes, clip_boxes_batch
 from model.nms.nms_wrapper import nms
 
-import pdb
-
 DEBUG = False
+
 
 class _ProposalLayer(nn.Module):
     """
@@ -33,8 +35,9 @@ class _ProposalLayer(nn.Module):
         super(_ProposalLayer, self).__init__()
 
         self._feat_stride = feat_stride
-        self._anchors = torch.from_numpy(generate_anchors(scales=np.array(scales), 
-            ratios=np.array(ratios))).float()
+        self._anchors = torch.from_numpy(
+            generate_anchors(scales=np.array(scales), ratios=np.array(ratios))
+        ).float()
         self._num_anchors = self._anchors.size(0)
 
         # rois blob: holds R regions of interest, each is a 5-tuple
@@ -61,7 +64,6 @@ class _ProposalLayer(nn.Module):
         # take after_nms_topN proposals after NMS
         # return the top proposals (-> RoIs top, scores top)
 
-
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs
         scores = input[0][:, self._num_anchors:, :, :]
@@ -69,10 +71,10 @@ class _ProposalLayer(nn.Module):
         im_info = input[2]
         cfg_key = input[3]
 
-        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
+        pre_nms_topN = cfg[cfg_key].RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
-        nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
-        min_size      = cfg[cfg_key].RPN_MIN_SIZE
+        nms_thresh = cfg[cfg_key].RPN_NMS_THRESH
+        min_size = cfg[cfg_key].RPN_MIN_SIZE
 
         batch_size = bbox_deltas.size(0)
 
@@ -135,11 +137,11 @@ class _ProposalLayer(nn.Module):
             # # 5. take top pre_nms_topN (e.g. 6000)
             order_single = order[i]
 
-            if pre_nms_topN > 0 and pre_nms_topN < scores_keep.numel():
+            if 0 < pre_nms_topN < scores_keep.numel():
                 order_single = order_single[:pre_nms_topN]
 
             proposals_single = proposals_single[order_single, :]
-            scores_single = scores_single[order_single].view(-1,1)
+            scores_single = scores_single[order_single].view(-1, 1)
 
             # 6. apply nms (e.g. threshold = 0.7)
             # 7. take after_nms_topN (e.g. 300)
@@ -168,9 +170,10 @@ class _ProposalLayer(nn.Module):
         """Reshaping happens during the call to forward."""
         pass
 
+    @staticmethod
     def _filter_boxes(self, boxes, min_size):
         """Remove all boxes with any side smaller than min_size."""
         ws = boxes[:, :, 2] - boxes[:, :, 0] + 1
         hs = boxes[:, :, 3] - boxes[:, :, 1] + 1
-        keep = ((ws >= min_size.view(-1,1).expand_as(ws)) & (hs >= min_size.view(-1,1).expand_as(hs)))
+        keep = ((ws >= min_size.view(-1, 1).expand_as(ws)) & (hs >= min_size.view(-1, 1).expand_as(hs)))
         return keep
